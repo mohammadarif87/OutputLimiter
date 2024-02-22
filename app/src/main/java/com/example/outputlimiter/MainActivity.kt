@@ -24,11 +24,15 @@ import androidx.compose.ui.unit.dp
 import com.example.outputlimiter.ui.theme.OutputLimiterTheme
 import kotlin.math.roundToInt
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import android.provider.Settings
+import android.util.Log
 
 
 class MainActivity : ComponentActivity() {
@@ -59,7 +63,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(bottom = 32.dp)
                             )
 
-                            VolumeControlBox()
+                            VolumeControlBox(LocalContext.current)
                         }
                     }
                 }
@@ -69,9 +73,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun VolumeControlBox() {
-    val context = LocalContext.current
-
+fun VolumeControlBox(context: Context) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -82,7 +84,8 @@ fun VolumeControlBox() {
             context = context
         )
         BrightnessControl(
-            modifier = Modifier
+            modifier = Modifier,
+            context = context
         )
     }
 }
@@ -124,7 +127,7 @@ fun VolumeControl(modifier: Modifier = Modifier, context: Context) {
 
 
 @Composable
-fun BrightnessControl(modifier: Modifier = Modifier) {
+fun BrightnessControl(modifier: Modifier = Modifier, context: Context) {
     Column(
         modifier = modifier
     ) {
@@ -138,26 +141,68 @@ fun BrightnessControl(modifier: Modifier = Modifier) {
 
             Slider(
                 value = sliderPosition.toFloat(),
-                onValueChange = { sliderPosition = it.roundToInt() },
+                onValueChange = {
+                    sliderPosition = it.roundToInt()
+                    updateBrightness(context, sliderPosition)
+                },
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.secondary,
                     activeTrackColor = MaterialTheme.colorScheme.secondary,
                     inactiveTrackColor = MaterialTheme.colorScheme.secondaryContainer,
                 ),
                 steps = 9,
-                valueRange = 0f..100f
+                valueRange = 100f..1600f
             )
             Text(text = sliderPosition.toString())
         }
     }
 }
 
+private fun updateBrightness(context: Context, brightnessLevel: Int) {
+    try {
+        if (Settings.System.canWrite(context)) {
+            val brightnessValue = (brightnessLevel.toFloat() / 100.0f) * 255.0f
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS,
+                brightnessValue.roundToInt()
+            )
+        } else {
+            // Request WRITE_SETTINGS permission
+            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+            intent.data = Uri.parse("package:" + context.packageName)
+            context.startActivity(intent)
+        }
+    } catch (e: Settings.SettingNotFoundException) {
+        // Handle exception as needed
+        e.printStackTrace()
+    }
+
+    val autoBrightnessEnabled =
+        Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE) ==
+                Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+
+    //Log.d("Brightness", "Auto Brightness Enabled: $autoBrightnessEnabled")
+
+    if (autoBrightnessEnabled) {
+        // Disable auto-brightness
+        Settings.System.putInt(
+            context.contentResolver,
+            Settings.System.SCREEN_BRIGHTNESS_MODE,
+            Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+        )
+        //Log.d("Brightness", "Auto Brightness Override to False")
+    }
+}
+
+
 
 @Preview(showBackground = true)
 @Composable
 fun VolumeControlBoxPreview() {
+    val context = LocalContext.current // Assuming LocalContext is available in this scope
     OutputLimiterTheme {
-        VolumeControlBox()
-        BrightnessControl()
+        VolumeControlBox(context)
+        BrightnessControl(context = LocalContext.current)
     }
 }
