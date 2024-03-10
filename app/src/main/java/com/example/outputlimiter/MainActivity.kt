@@ -33,6 +33,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import android.provider.Settings
 import android.util.Log
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.vector.ImageVector
+import android.os.Process
 
 
 class MainActivity : ComponentActivity() {
@@ -65,9 +72,46 @@ class MainActivity : ComponentActivity() {
 
                             VolumeControlBox(LocalContext.current)
                         }
+
+                        // Check for WRITE_SETTINGS permission
+                        if (Settings.System.canWrite(LocalContext.current)) {
+                            // Permission is already granted
+                            val currentBrightness = getCurrentBrightness(LocalContext.current)
+                            // Set the initial position of the brightness slider
+                            // BrightnessControl(context = LocalContext.current, initialBrightness = currentBrightness)
+                        } else {
+                            // Permission not granted, show PermissionAlertDialog
+                            PermissionAlertDialog(
+                                onExitRequest = {
+                                    // Navigate to the home screen
+//                                    val intent = Intent(Intent.ACTION_MAIN)
+//                                    intent.addCategory(Intent.CATEGORY_HOME)
+//                                    startActivity(intent)
+                                    Process.killProcess(Process.myPid())
+                                },
+                                onConfirmation = {
+                                    // Request WRITE_SETTINGS permission
+                                    val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+                                    intent.data = Uri.parse("package:" + packageName)
+                                    startActivity(intent)
+                                },
+                                dialogText = "In order to toggle Brightness, you must enable the permission on your device\nAuto Brightness will also be disabled",
+                                dialogTitle = "Permission Request",
+                                icon = Icons.Default.Warning
+                            )
+                        }
                     }
                 }
             }
+        }
+    }
+    // Function to get the current brightness level
+    private fun getCurrentBrightness(context: Context): Int {
+        return try {
+            Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+        } catch (e: Settings.SettingNotFoundException) {
+            e.printStackTrace()
+            0
         }
     }
 }
@@ -127,7 +171,8 @@ fun VolumeControl(modifier: Modifier = Modifier, context: Context) {
 
 
 @Composable
-fun BrightnessControl(modifier: Modifier = Modifier, context: Context) {
+fun BrightnessControl(modifier: Modifier = Modifier, context: Context, initialBrightness: Int = 0) {
+    var sliderPosition by remember { mutableStateOf(initialBrightness) }
     Column(
         modifier = modifier
     ) {
@@ -135,7 +180,6 @@ fun BrightnessControl(modifier: Modifier = Modifier, context: Context) {
 
         Text(text = "Brightness Control:")
 
-        var sliderPosition by remember { mutableStateOf(0) }
         Column {
             Spacer(modifier = Modifier.height(16.dp)) // Add this line for spacing below "Volume Control"
 
@@ -182,7 +226,7 @@ private fun updateBrightness(context: Context, brightnessLevel: Int) {
         Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE) ==
                 Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
 
-    //Log.d("Brightness", "Auto Brightness Enabled: $autoBrightnessEnabled")
+    Log.d("Brightness", "Auto Brightness Enabled: $autoBrightnessEnabled")
 
     if (autoBrightnessEnabled) {
         // Disable auto-brightness
@@ -191,7 +235,7 @@ private fun updateBrightness(context: Context, brightnessLevel: Int) {
             Settings.System.SCREEN_BRIGHTNESS_MODE,
             Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
         )
-        //Log.d("Brightness", "Auto Brightness Override to False")
+        Log.d("Brightness", "Auto Brightness Override to False")
     }
 }
 
@@ -205,4 +249,46 @@ fun VolumeControlBoxPreview() {
         VolumeControlBox(context)
         BrightnessControl(context = LocalContext.current)
     }
+}
+
+@Composable
+fun PermissionAlertDialog(
+    onExitRequest: () -> Unit,
+    onConfirmation: () -> Unit,
+    dialogTitle: String,
+    dialogText: String,
+    icon: ImageVector,
+) {
+    AlertDialog(
+        icon = {
+            Icon(icon, contentDescription = "Example Icon")
+        },
+        title = {
+            Text(text = dialogTitle)
+        },
+        text = {
+            Text(text = dialogText)
+        },
+        onDismissRequest = {
+            onExitRequest()
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirmation()
+                }
+            ) {
+                Text("Confirm")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    onExitRequest()
+                }
+            ) {
+                Text("Exit")
+            }
+        }
+    )
 }
