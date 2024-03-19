@@ -15,7 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -40,11 +40,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.vector.ImageVector
 import android.os.Process
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        //Splash Screen
+        Thread.sleep(3000)
+        installSplashScreen()
+
         setContent {
             OutputLimiterTheme {
                 Surface(
@@ -74,12 +80,12 @@ class MainActivity : ComponentActivity() {
                         }
 
                         // Check for WRITE_SETTINGS permission
-                        if (Settings.System.canWrite(LocalContext.current)) {
+                        if (!Settings.System.canWrite(LocalContext.current)) {
                             // Permission is already granted
-                            val currentBrightness = getCurrentBrightness(LocalContext.current)
+                            //val currentBrightness = getCurrentBrightness(LocalContext.current)
                             // Set the initial position of the brightness slider
                             // BrightnessControl(context = LocalContext.current, initialBrightness = currentBrightness)
-                        } else {
+
                             // Permission not granted, show PermissionAlertDialog
                             PermissionAlertDialog(
                                 onExitRequest = {
@@ -92,7 +98,7 @@ class MainActivity : ComponentActivity() {
                                 onConfirmation = {
                                     // Request WRITE_SETTINGS permission
                                     val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-                                    intent.data = Uri.parse("package:" + packageName)
+                                    intent.data = Uri.parse("package:$packageName")
                                     startActivity(intent)
                                 },
                                 dialogText = "In order to toggle Brightness, you must enable the permission on your device\nAuto Brightness will also be disabled",
@@ -106,14 +112,14 @@ class MainActivity : ComponentActivity() {
         }
     }
     // Function to get the current brightness level
-    private fun getCurrentBrightness(context: Context): Int {
-        return try {
-            Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
-        } catch (e: Settings.SettingNotFoundException) {
-            e.printStackTrace()
-            0
-        }
-    }
+//    private fun getCurrentBrightness(context: Context): Int {
+//        return try {
+//            Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+//        } catch (e: Settings.SettingNotFoundException) {
+//            e.printStackTrace()
+//            0
+//        }
+//    }
 }
 
 @Composable
@@ -146,7 +152,7 @@ fun VolumeControl(modifier: Modifier = Modifier, context: Context) {
 
         Text(text = "Volume Control:")
 
-        var sliderPosition by remember { mutableStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
+        var sliderPosition by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
         Column {
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -172,7 +178,7 @@ fun VolumeControl(modifier: Modifier = Modifier, context: Context) {
 
 @Composable
 fun BrightnessControl(modifier: Modifier = Modifier, context: Context, initialBrightness: Int = 0) {
-    var sliderPosition by remember { mutableStateOf(initialBrightness) }
+    var sliderPosition by remember { mutableIntStateOf(initialBrightness) }
     Column(
         modifier = modifier
     ) {
