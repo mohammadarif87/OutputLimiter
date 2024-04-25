@@ -1,66 +1,81 @@
 package com.example.outputlimiter
 
-import android.annotation.SuppressLint
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import com.example.outputlimiter.ui.theme.OutputLimiterTheme
-import kotlin.math.roundToInt
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
 import android.provider.Settings
 import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.graphics.vector.ImageVector
-import android.os.Process
-import android.view.KeyEvent
-import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.example.outputlimiter.ui.theme.OutputLimiterTheme
+import kotlin.math.roundToInt
 
-
-interface CustomKeyEventDispatcher {
-    fun dispatchKeyEvent(event: KeyEvent): Boolean
-}
-
-class MainActivity : ComponentActivity(), CustomKeyEventDispatcher {
+class MainActivity : ComponentActivity() {
 
     private val audioManager by lazy {
         getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
     private var volumeLocked by mutableStateOf(false)
     private var lockedVolume: Int = 0
+
+    // Handler and Runnable for volume adjustment
+    private val handler = Handler(Looper.getMainLooper())
+    private val volumeCheckRunnable = object : Runnable {
+        override fun run() {
+            if (volumeLocked) {
+                val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (currentVolume > lockedVolume) {
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, lockedVolume, 0)
+                } else if (currentVolume < lockedVolume) {
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, lockedVolume, 0)
+                }
+            }
+            // Schedule the next check after 5 seconds (adjust as needed)
+            handler.postDelayed(this, 250)
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Start the volume check runnable
+        handler.post(volumeCheckRunnable)
 
         //Splash Screen
         Thread.sleep(3000)
@@ -91,7 +106,12 @@ class MainActivity : ComponentActivity(), CustomKeyEventDispatcher {
                                 modifier = Modifier.padding(bottom = 32.dp)
                             )
 
-                            VolumeControlBox(LocalContext.current, this@MainActivity)
+                            // Pass volumeLocked state and its setter to VolumeControlBox
+                            VolumeControlBox(
+                                volumeLocked = volumeLocked
+                            ) {
+                                toggleVolumeLock()
+                            }
                         }
 
                         // Check for WRITE_SETTINGS permission
@@ -112,7 +132,7 @@ class MainActivity : ComponentActivity(), CustomKeyEventDispatcher {
                                     intent.data = Uri.parse("package:$packageName")
                                     startActivity(intent)
                                 },
-                                dialogText = "In order to toggle Brightness, you must enable the permission on your device\nAuto Brightness will also be disabled",
+                                dialogText = "In order to toggle Brightness, you must enable the permission on your device\n\nAuto Brightness will also be disabled",
                                 dialogTitle = "Permission Request",
                                 icon = Icons.Default.Warning
                             )
@@ -121,43 +141,27 @@ class MainActivity : ComponentActivity(), CustomKeyEventDispatcher {
                 }
             }
         }
-        // Register key event listener
-        registerVolumeKeyListener()
     }
 
-    private fun registerVolumeKeyListener() {
-        volumeKeyDispatcher = this
-    }
-
-    private fun handleKeyEvent(event: KeyEvent): Boolean {
-        // Consume the volume key event to prevent the system from adjusting the volume
-        return volumeLocked && event.action == KeyEvent.ACTION_DOWN
-    }
-
-    @SuppressLint("RestrictedApi")
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        return handleKeyEvent(event)
-    }
     override fun onDestroy() {
         super.onDestroy()
-        volumeKeyDispatcher = null
+        // Remove the runnable callbacks to prevent memory leaks
+        handler.removeCallbacks(volumeCheckRunnable)
     }
-    fun toggleVolumeLock() {
+    private fun toggleVolumeLock() {
         volumeLocked = !volumeLocked
         if (volumeLocked) {
             // Store the current volume level as the locked volume
             lockedVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         }
     }
-    fun getVolumeLockedState(): Boolean {
-        return volumeLocked
-    }
 }
 
-var volumeKeyDispatcher: CustomKeyEventDispatcher? = null
-
 @Composable
-fun VolumeControlBox(context: Context, mainActivity: MainActivity) {
+fun VolumeControlBox(
+    volumeLocked: Boolean,
+    toggleVolumeLock: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -165,22 +169,29 @@ fun VolumeControlBox(context: Context, mainActivity: MainActivity) {
     ) {
         VolumeControl(
             modifier = Modifier,
-            context = context,
-            mainActivity = mainActivity
-        )
+            volumeLocked = volumeLocked
+        ) {
+            toggleVolumeLock()
+        }
+
         BrightnessControl(
             modifier = Modifier,
-            context = context
+            context = LocalContext.current
         )
     }
 }
 
 
 @Composable
-fun VolumeControl(modifier: Modifier = Modifier, context: Context, mainActivity: MainActivity) {
+fun VolumeControl(
+    modifier: Modifier = Modifier,
+    volumeLocked: Boolean,
+    toggleVolumeLock: () -> Unit
+) {
+    val context = LocalContext.current
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-    val volumeLocked = mainActivity.getVolumeLockedState()
+    //val volumeLocked = mainActivity.getVolumeLockedState()
     var sliderPosition by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
 
     Column(
@@ -197,7 +208,8 @@ fun VolumeControl(modifier: Modifier = Modifier, context: Context, mainActivity:
             Switch(
                 checked = volumeLocked,
                 onCheckedChange = {
-                    mainActivity.toggleVolumeLock()
+                    // Call toggleVolumeLock directly since it's a method of MainActivity
+                    toggleVolumeLock()
                 }
             )
         }
@@ -215,7 +227,7 @@ fun VolumeControl(modifier: Modifier = Modifier, context: Context, mainActivity:
                 activeTrackColor = if (volumeLocked) Color.Gray else MaterialTheme.colorScheme.secondary,
                 inactiveTrackColor = if (volumeLocked) Color.Gray else MaterialTheme.colorScheme.secondaryContainer,
             ),
-            steps = 9,
+            steps = 15,
             valueRange = 0f..audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat(),
             enabled = !volumeLocked // Disable the slider when volume is locked
         )
@@ -302,9 +314,9 @@ private fun updateBrightness(context: Context, brightnessLevel: Int) {
 @Preview(showBackground = true)
 @Composable
 fun VolumeControlBoxPreview() {
-    val context = LocalContext.current // Assuming LocalContext is available in this scope
+    LocalContext.current // Assuming LocalContext is available in this scope
     OutputLimiterTheme {
-        VolumeControlBox(context, MainActivity())
+        //VolumeControlBox(context, MainActivity())
         BrightnessControl(context = LocalContext.current)
     }
 }
