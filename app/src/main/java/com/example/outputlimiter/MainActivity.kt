@@ -31,6 +31,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +84,8 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
 
         setContent {
+            val openAlertDialog = remember { mutableStateOf(true) }
+
             OutputLimiterTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -109,21 +112,16 @@ class MainActivity : ComponentActivity() {
 
                             // Pass volumeLocked state and its setter to VolumeControlBox
                             VolumeControlBox(
-                                volumeLocked = volumeLocked
-                            ) {
-                                toggleVolumeLock()
-                            }
+                                volumeLocked = volumeLocked,
+                                toggleVolumeLock = {
+                                    toggleVolumeLock()
+                                                   },
+                                openAlertDialog = openAlertDialog
+                            )
                         }
 
                         // Check for WRITE_SETTINGS permission
                         if (!Settings.System.canWrite(LocalContext.current)) {
-                            // Permission is already granted
-                            //val currentBrightness = getCurrentBrightness(LocalContext.current)
-                            // Set the initial position of the brightness slider
-                            // BrightnessControl(context = LocalContext.current, initialBrightness = currentBrightness)
-
-                            val openAlertDialog = remember { mutableStateOf(true) }
-
                             when {
                                 openAlertDialog.value -> {
                                     // Permission not granted, show PermissionAlertDialog
@@ -134,8 +132,7 @@ class MainActivity : ComponentActivity() {
                                         onConfirmation = {
                                             run { openAlertDialog.value = false }
                                             // Request WRITE_SETTINGS permission
-                                            val intent =
-                                                Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+                                            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
                                             intent.data = Uri.parse("package:$packageName")
                                             startActivity(intent)
                                         },
@@ -170,7 +167,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun VolumeControlBox(
     volumeLocked: Boolean,
-    toggleVolumeLock: () -> Unit
+    toggleVolumeLock: () -> Unit,
+    openAlertDialog: MutableState<Boolean>
 ) {
     Column(
         modifier = Modifier
@@ -186,7 +184,8 @@ fun VolumeControlBox(
 
         BrightnessControl(
             modifier = Modifier,
-            context = LocalContext.current
+            context = LocalContext.current,
+            openAlertDialog = openAlertDialog
         )
     }
 }
@@ -248,15 +247,19 @@ fun VolumeControl(
         Text(text = sliderPosition.toString())
 
         Spacer(modifier = Modifier.height(16.dp))
-
-
     }
 }
 
 
 @Composable
-fun BrightnessControl(modifier: Modifier = Modifier, context: Context, initialBrightness: Int = 0) {
+fun BrightnessControl(
+    modifier: Modifier = Modifier,
+    context: Context,
+    initialBrightness: Int = 100,
+    openAlertDialog: MutableState<Boolean>
+) {
     var sliderPosition by remember { mutableIntStateOf(initialBrightness) }
+    
     Column(
         modifier = modifier
     ) {
@@ -271,7 +274,19 @@ fun BrightnessControl(modifier: Modifier = Modifier, context: Context, initialBr
                 value = sliderPosition.toFloat(),
                 onValueChange = {
                     sliderPosition = it.roundToInt()
-                    updateBrightness(context, sliderPosition)
+                    if (Settings.System.canWrite(context)) {
+                        // Permission is granted, update brightness
+                        updateBrightness(
+                            context = context,
+                            brightnessLevel = sliderPosition,
+                            showPermissionDialog = {
+                                openAlertDialog.value = true
+                            }
+                        )
+                    } else {
+                        // Permission is not granted, show dialog
+                        openAlertDialog.value = true
+                    }
                 },
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.secondary,
@@ -286,7 +301,11 @@ fun BrightnessControl(modifier: Modifier = Modifier, context: Context, initialBr
     }
 }
 
-private fun updateBrightness(context: Context, brightnessLevel: Int) {
+private fun updateBrightness(
+    context: Context,
+    brightnessLevel: Int,
+    showPermissionDialog: () -> Unit
+    ) {
     try {
         if (Settings.System.canWrite(context)) {
             val brightnessValue = (brightnessLevel.toFloat() / 100.0f) * 255.0f
@@ -296,11 +315,8 @@ private fun updateBrightness(context: Context, brightnessLevel: Int) {
                 brightnessValue.roundToInt()
             )
         } else {
-            // Request WRITE_SETTINGS permission
-            // val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-            // intent.data = Uri.parse("package:" + context.packageName)
-            // context.startActivity(intent)
-
+            // Show PermissionAlertDialog to request permission
+            showPermissionDialog()
         }
     } catch (e: Settings.SettingNotFoundException) {
         // Handle exception as needed
@@ -331,7 +347,7 @@ fun VolumeControlBoxPreview() {
     LocalContext.current // Assuming LocalContext is available in this scope
     OutputLimiterTheme {
         //VolumeControlBox(context, MainActivity())
-        BrightnessControl(context = LocalContext.current)
+        //BrightnessControl(context = LocalContext.current, modifier = Modifier, initialBrightness = 0, openAlertDialog = MutableState<Boolean>)
     }
 }
 
