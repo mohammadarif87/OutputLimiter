@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.Process
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -41,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
             handler.postDelayed(this, 250)
         }
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -121,21 +122,29 @@ class MainActivity : ComponentActivity() {
                             // Set the initial position of the brightness slider
                             // BrightnessControl(context = LocalContext.current, initialBrightness = currentBrightness)
 
-                            // Permission not granted, show PermissionAlertDialog
-                            PermissionAlertDialog(
-                                onExitRequest = {
-                                    Process.killProcess(Process.myPid())
-                                },
-                                onConfirmation = {
-                                    // Request WRITE_SETTINGS permission
-                                    val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-                                    intent.data = Uri.parse("package:$packageName")
-                                    startActivity(intent)
-                                },
-                                dialogText = "In order to toggle Brightness, you must enable the permission on your device\n\nAuto Brightness will also be disabled",
-                                dialogTitle = "Permission Request",
-                                icon = Icons.Default.Warning
-                            )
+                            val openAlertDialog = remember { mutableStateOf(true) }
+
+                            when {
+                                openAlertDialog.value -> {
+                                    // Permission not granted, show PermissionAlertDialog
+                                    PermissionAlertDialog(
+                                        onDismissRequest = {
+                                            run { openAlertDialog.value = false }
+                                        },
+                                        onConfirmation = {
+                                            run { openAlertDialog.value = false }
+                                            // Request WRITE_SETTINGS permission
+                                            val intent =
+                                                Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+                                            intent.data = Uri.parse("package:$packageName")
+                                            startActivity(intent)
+                                        },
+                                        dialogText = "In order to toggle Brightness, you must enable the permission on your device\n\nAuto Brightness will also be disabled",
+                                        dialogTitle = "Permission Request",
+                                        icon = Icons.Default.Warning
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -148,6 +157,7 @@ class MainActivity : ComponentActivity() {
         // Remove the runnable callbacks to prevent memory leaks
         handler.removeCallbacks(volumeCheckRunnable)
     }
+
     private fun toggleVolumeLock() {
         volumeLocked = !volumeLocked
         if (volumeLocked) {
@@ -213,13 +223,17 @@ fun VolumeControl(
                 }
             )
         }
-        
+
         Slider(
             value = sliderPosition.toFloat(),
             onValueChange = {
                 if (!volumeLocked) {
                     sliderPosition = it.roundToInt()
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, sliderPosition, AudioManager.FLAG_SHOW_UI)
+                    audioManager.setStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        sliderPosition,
+                        AudioManager.FLAG_SHOW_UI
+                    )
                 }
             },
             colors = SliderDefaults.colors(
@@ -283,9 +297,10 @@ private fun updateBrightness(context: Context, brightnessLevel: Int) {
             )
         } else {
             // Request WRITE_SETTINGS permission
-            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-            intent.data = Uri.parse("package:" + context.packageName)
-            context.startActivity(intent)
+            // val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+            // intent.data = Uri.parse("package:" + context.packageName)
+            // context.startActivity(intent)
+
         }
     } catch (e: Settings.SettingNotFoundException) {
         // Handle exception as needed
@@ -310,7 +325,6 @@ private fun updateBrightness(context: Context, brightnessLevel: Int) {
 }
 
 
-
 @Preview(showBackground = true)
 @Composable
 fun VolumeControlBoxPreview() {
@@ -323,7 +337,7 @@ fun VolumeControlBoxPreview() {
 
 @Composable
 fun PermissionAlertDialog(
-    onExitRequest: () -> Unit,
+    onDismissRequest: () -> Unit,
     onConfirmation: () -> Unit,
     dialogTitle: String,
     dialogText: String,
@@ -334,13 +348,13 @@ fun PermissionAlertDialog(
             Icon(icon, contentDescription = "Example Icon")
         },
         title = {
-            Text(text = dialogTitle)
+            Text(text = dialogTitle, textAlign = TextAlign.Center)
         },
         text = {
-            Text(text = dialogText)
+            Text(text = dialogText, textAlign = TextAlign.Center)
         },
         onDismissRequest = {
-            onExitRequest()
+            onDismissRequest()
         },
         confirmButton = {
             TextButton(
@@ -354,11 +368,12 @@ fun PermissionAlertDialog(
         dismissButton = {
             TextButton(
                 onClick = {
-                    onExitRequest()
+                    onDismissRequest()
                 }
             ) {
-                Text("Exit")
+                Text("Dismiss")
             }
         }
     )
 }
+
