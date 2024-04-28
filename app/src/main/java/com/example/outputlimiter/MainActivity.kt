@@ -1,5 +1,6 @@
 package com.example.outputlimiter
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -12,6 +13,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -37,6 +40,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -49,7 +53,6 @@ import com.example.outputlimiter.ui.theme.OutputLimiterTheme
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
-
     private val audioManager by lazy {
         getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
@@ -85,6 +88,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val openAlertDialog = remember { mutableStateOf(true) }
+            val context = LocalContext.current
+            val isWriteSettingsAllowed = remember { mutableStateOf(Settings.System.canWrite(context)) }
 
             OutputLimiterTheme {
                 Surface(
@@ -101,7 +106,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .padding(16.dp)
                                 .fillMaxWidth()
-                                .background(Color.Blue), // Change background color here
+                                .background(Color.Blue),
                             contentColor = Color.Black
                         ) {
                             Text(
@@ -116,7 +121,8 @@ class MainActivity : ComponentActivity() {
                                 toggleVolumeLock = {
                                     toggleVolumeLock()
                                                    },
-                                openAlertDialog = openAlertDialog
+                                openAlertDialog = openAlertDialog,
+                                isWriteSettingsAllowed = isWriteSettingsAllowed
                             )
                         }
 
@@ -135,8 +141,9 @@ class MainActivity : ComponentActivity() {
                                             val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
                                             intent.data = Uri.parse("package:$packageName")
                                             startActivity(intent)
+                                            endActivity(context)
                                         },
-                                        dialogText = "In order to toggle Brightness, you must enable the permission on your device\n\nAuto Brightness will also be disabled",
+                                        dialogText = "In order to toggle Brightness, you must enable the permission on your device\n\nAuto Brightness will also be disabled\n\nNote that you may need to restart the app for changes to be applied",
                                         dialogTitle = "Permission Request",
                                         icon = Icons.Default.Warning
                                     )
@@ -168,7 +175,8 @@ class MainActivity : ComponentActivity() {
 fun VolumeControlBox(
     volumeLocked: Boolean,
     toggleVolumeLock: () -> Unit,
-    openAlertDialog: MutableState<Boolean>
+    openAlertDialog: MutableState<Boolean>,
+    isWriteSettingsAllowed: MutableState<Boolean>
 ) {
     Column(
         modifier = Modifier
@@ -185,7 +193,9 @@ fun VolumeControlBox(
         BrightnessControl(
             modifier = Modifier,
             context = LocalContext.current,
-            openAlertDialog = openAlertDialog
+            initialBrightness = 100,
+            openAlertDialog = openAlertDialog,
+            isWriteSettingsAllowed = isWriteSettingsAllowed
         )
     }
 }
@@ -255,11 +265,14 @@ fun VolumeControl(
 fun BrightnessControl(
     modifier: Modifier = Modifier,
     context: Context,
-    initialBrightness: Int = 100,
-    openAlertDialog: MutableState<Boolean>
+    initialBrightness: Int,
+    openAlertDialog: MutableState<Boolean>,
+    isWriteSettingsAllowed: MutableState<Boolean>
 ) {
     var sliderPosition by remember { mutableIntStateOf(initialBrightness) }
-    
+    var brightnessControlEnabled by remember { mutableStateOf(isWriteSettingsAllowed.value) }
+    var buttonVisible by remember { mutableStateOf(!isWriteSettingsAllowed.value) }
+
     Column(
         modifier = modifier
     ) {
@@ -274,8 +287,7 @@ fun BrightnessControl(
                 value = sliderPosition.toFloat(),
                 onValueChange = {
                     sliderPosition = it.roundToInt()
-                    if (Settings.System.canWrite(context)) {
-                        // Permission is granted, update brightness
+                    if (brightnessControlEnabled) {
                         updateBrightness(
                             context = context,
                             brightnessLevel = sliderPosition,
@@ -283,9 +295,6 @@ fun BrightnessControl(
                                 openAlertDialog.value = true
                             }
                         )
-                    } else {
-                        // Permission is not granted, show dialog
-                        openAlertDialog.value = true
                     }
                 },
                 colors = SliderDefaults.colors(
@@ -294,10 +303,45 @@ fun BrightnessControl(
                     inactiveTrackColor = MaterialTheme.colorScheme.secondaryContainer,
                 ),
                 steps = 9,
-                valueRange = 100f..1600f
+                valueRange = 100f..1600f,
+                enabled = brightnessControlEnabled // Enable/disable the slider based on state
             )
             Text(text = sliderPosition.toString())
         }
+
+        // Check if WRITE_SETTINGS permission is allowed
+        if (buttonVisible && !isWriteSettingsAllowed.value) {
+            // Show the button if permission is not allowed and brightness control is enabled
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Button(
+                    onClick = {
+                        // If permission is not allowed, show the permission alert dialog
+                        if (!isWriteSettingsAllowed.value) {
+                            openAlertDialog.value = true
+                        }
+                    },
+                    enabled = !isWriteSettingsAllowed.value // Disable the button if permission is granted
+                ) {
+                    Text("Enable Permission for Brightness")
+                }
+            }
+        }
+    }
+
+    // Update the brightnessControlEnabled and buttonVisible states when the permission is allowed
+    if (isWriteSettingsAllowed.value) {
+        brightnessControlEnabled = true
+        buttonVisible = false
+    }
+}
+
+// Function to restart the activity
+fun endActivity(context: Context) {
+    if (context is Activity) {
+        context.finish()
     }
 }
 
@@ -361,7 +405,7 @@ fun PermissionAlertDialog(
 ) {
     AlertDialog(
         icon = {
-            Icon(icon, contentDescription = "Example Icon")
+            Icon(icon, contentDescription = "Warning")
         },
         title = {
             Text(text = dialogTitle, textAlign = TextAlign.Center)
