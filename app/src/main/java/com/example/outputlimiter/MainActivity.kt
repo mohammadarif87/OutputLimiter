@@ -34,6 +34,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +51,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.outputlimiter.ui.theme.OutputLimiterTheme
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -193,7 +195,7 @@ fun VolumeControlBox(
         BrightnessControl(
             modifier = Modifier,
             context = LocalContext.current,
-            initialBrightness = 100,
+            initialBrightness = 400,
             openAlertDialog = openAlertDialog,
             isWriteSettingsAllowed = isWriteSettingsAllowed
         )
@@ -221,7 +223,7 @@ fun VolumeControl(
         Text(text = "Volume Control:")
         Spacer(modifier = Modifier.height(8.dp))
 
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(text = "Lock Volume")
             Spacer(modifier = Modifier.weight(1f))
             Switch(
@@ -272,6 +274,8 @@ fun BrightnessControl(
     var sliderPosition by remember { mutableIntStateOf(initialBrightness) }
     var brightnessControlEnabled by remember { mutableStateOf(isWriteSettingsAllowed.value) }
     var buttonVisible by remember { mutableStateOf(!isWriteSettingsAllowed.value) }
+    var brightnessLocked by remember { mutableStateOf(false) }
+    var lockedBrightnessValue by remember { mutableStateOf(0) }
 
     Column(
         modifier = modifier
@@ -281,13 +285,29 @@ fun BrightnessControl(
         Text(text = "Brightness Control:")
 
         Column {
-            Spacer(modifier = Modifier.height(16.dp)) // Add this line for spacing below "Volume Control"
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "Lock Brightness")
+                Spacer(modifier = Modifier.weight(1f))
+                Switch(
+                    checked = brightnessLocked,
+                    onCheckedChange = {
+                        brightnessLocked = it
+                        if (it) {
+                            // Set locked brightness value when toggle is turned on
+                            lockedBrightnessValue = sliderPosition
+                        }
+                    },
+                    enabled = brightnessControlEnabled && isWriteSettingsAllowed.value
+                )
+            }
 
             Slider(
                 value = sliderPosition.toFloat(),
                 onValueChange = {
                     sliderPosition = it.roundToInt()
-                    if (brightnessControlEnabled) {
+                    if (brightnessControlEnabled && !brightnessLocked) {
                         updateBrightness(
                             context = context,
                             brightnessLevel = sliderPosition,
@@ -302,9 +322,9 @@ fun BrightnessControl(
                     activeTrackColor = MaterialTheme.colorScheme.secondary,
                     inactiveTrackColor = MaterialTheme.colorScheme.secondaryContainer,
                 ),
-                steps = 9,
-                valueRange = 100f..1600f,
-                enabled = brightnessControlEnabled // Enable/disable the slider based on state
+                steps = 31,
+                valueRange = 0f..1600f,
+                enabled = brightnessControlEnabled && !brightnessLocked // Enable/disable the slider based on state
             )
             Text(text = sliderPosition.toString())
         }
@@ -335,6 +355,31 @@ fun BrightnessControl(
     if (isWriteSettingsAllowed.value) {
         brightnessControlEnabled = true
         buttonVisible = false
+    }
+
+    // Handler to check brightness level periodically when brightness is locked
+    LaunchedEffect(brightnessLocked) {
+        if (brightnessLocked) {
+            while (brightnessLocked) {
+                delay(500) // Check every 500 milliseconds
+                val currentBrightness = getCurrentBrightness(context)
+                if (currentBrightness != lockedBrightnessValue) {
+                    // If brightness is adjusted, set it back to the locked value
+                    updateBrightness(context, lockedBrightnessValue) {}
+                    sliderPosition = lockedBrightnessValue
+                }
+            }
+        }
+    }
+}
+
+// Function to get the current brightness level
+private fun getCurrentBrightness(context: Context): Int {
+    return try {
+        Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+    } catch (e: Settings.SettingNotFoundException) {
+        e.printStackTrace()
+        0
     }
 }
 
